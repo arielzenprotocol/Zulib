@@ -25,14 +25,17 @@ type spend =
     { asset: asset;
       amount: U64.t }
 
+type recipient =
+    | PK of hash
+    | Contract of contractId
+
 type lock =
-    | PKLock of hash
-    | ContractLock of contractId
+    | RecipientLock of recipient
     | FeeLock
     | DestroyLock
     | ActivationSacrificeLock
     | ExtensionSacrificeLock of contractId
-    | CoinbaseLock of U32.t ** hash
+    | CoinbaseLock of U32.t ** recipient
     | HighVLock of U32.t ** (l:nat & A.indexed U8.byte l)
 
 type output =

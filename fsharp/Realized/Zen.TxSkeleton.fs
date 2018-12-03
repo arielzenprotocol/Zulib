@@ -86,7 +86,7 @@ let addOutput (output : output) (txSkeleton : txSkeleton) : Cost.t<txSkeleton, u
 
 let lockToContract (asset : asset) (amount:uint64) (contractId : contractId)
     (txSkeleton : txSkeleton) : Cost.t<txSkeleton, unit> =
-    lazy (let lock = ContractLock contractId
+    lazy (let lock = RecipientLock <| Contract contractId
 
           let output =
               { lock = lock;
@@ -95,7 +95,7 @@ let lockToContract (asset : asset) (amount:uint64) (contractId : contractId)
     |> Cost.C
 
 let lockToPubKey (asset : asset) (amount:uint64) (pkHash : hash) (txSkeleton : txSkeleton) : Cost.t<txSkeleton, unit> =
-    lazy (let lock = PKLock pkHash
+    lazy (let lock = RecipientLock <| PK pkHash
 
           let output =
               { lock = lock;
