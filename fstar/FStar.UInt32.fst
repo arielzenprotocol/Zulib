@@ -107,18 +107,19 @@ val lognot: t -> Tot t
 let lognot a = Mk (lognot (v a))
 *)
 
-(*
 (* Shift operators *)
-val shift_right: a:t -> s:UInt32.t -> Pure t
-  (requires True)
-  (ensures (fun c -> UInt32.v s < n ==> v c = (v a / (pow2 (UInt32.v s)))))
-let shift_right a s = Mk (shift_right (v a) (UInt32.v s))
 
-val shift_left: a:t -> s:UInt32.t -> Pure t
-  (requires True)
-  (ensures (fun c -> UInt32.v s < n ==> v c = ((v a * pow2 (UInt32.v s)) % pow2 n)))
-let shift_left a s = Mk (shift_left (v a) (UInt32.v s))
-*)
+val shift_left : t -> nat -> Tot t
+let rec shift_left a s =
+    match s with
+    | 0 -> a
+    | k -> mul_mod (shift_left a (k - 1)) (Mk 2)
+
+val shift_right: t -> nat -> Tot t
+let rec shift_right a s =
+    match s with
+    | 0 -> a
+    | k -> div (shift_right a (k - 1)) (Mk 2)
 
 (* Comparison operators *)
 let eq  (a:t) (b:t) : bool = v a = v b
