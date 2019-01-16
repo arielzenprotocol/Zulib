@@ -6,6 +6,7 @@ open Zen.Option
 let fits (x:int): bool = 0 <= x && x <= 255
 let size (x:int): Type0 = b2t(fits x)
 type uint_t = x:int{size x}
+private type bit = x:uint_t {x<2}
 
 abstract type t =
   | Mk: v:uint_t -> t
@@ -95,17 +96,34 @@ abstract val rem: a:t -> b:t{v b <> 0} -> Pure t
     v a - ((v a / v b) * v b) = v c))
 abstract let rem a b = Mk (v a % v b)
 
-(*
 (* Bitwise operators *)
-val logand: t -> t -> Tot t
-let logand a b = Mk (logand (v a) (v b))
-val logxor: t -> t -> Tot t
-let logxor a b = Mk (logxor (v a) (v b))
-val logor: t -> t -> Tot t
-let logor a b = Mk (logor (v a) (v b))
-val lognot: t -> Tot t
-let lognot a = Mk (lognot (v a))
-*)
+private val hd : t -> Tot bit
+private let hd x = v x % 2
+
+private val tl : t -> Tot t
+private let tl x = div x (Mk 2)
+
+private val cons : bit -> t -> Tot t
+private let cons b bs = add (uint_to_t b) (mul_mod (Mk 2) bs)
+
+private val lift_op : (t -> t) -> (t -> t) -> (bit -> bit -> bit) -> x:t -> y:t -> Tot t (decreases %[v x; v y])
+private let rec lift_op fx fy op x y =
+    match (v x, v y) with
+    | (_, 0) -> fx x
+    | (0, _) -> fy y
+    | (_, _) -> cons (op (hd x) (hd y)) (lift_op fx fy op (tl x) (tl y))
+
+abstract val logand: t -> t -> Tot t
+abstract let logand = lift_op (Zen.Base.konst (Mk 0)) (Zen.Base.konst (Mk 0)) (fun x y -> x * y)
+
+abstract val logor: t -> t -> Tot t
+abstract let logor = lift_op Zen.Base.id Zen.Base.id (fun x y -> x + y - x * y)
+
+abstract val logxor: t -> t -> Tot t
+abstract let logxor = lift_op Zen.Base.id Zen.Base.id (fun x y -> x * (1 - y) + (1 - x) * y)
+
+(* val lognot: t -> Tot t
+let lognot a = Mk (lognot (v a)) *)
 
 (* Shift operators *)
 
