@@ -10,8 +10,94 @@ open Microsoft.FSharp.Compiler
 
 module Array = Microsoft.FSharp.Collections.Array
 
+type FStarFile =
+    | Fst of string
+    | Fsti of string
+
+type BuildOperation =
+    | Extract of FStarFile
+    | Realize of FStarFile
+    | Include of string
+
+let sources =
+    [
+        Realize <| Fst "prims";
+        Realize <| Fst "FStar.Pervasives";
+        Extract <| Fst "Zen.Base";
+        Extract <| Fst "Zen.Option";
+        Extract <| Fst "Zen.Result";
+        Realize <| Fst "Zen.Cost.Realized";
+        Extract <| Fst "Zen.Cost.Extracted";
+        Extract <| Fst "Zen.Integers";
+        Realize <| Fst "FStar.UInt8";
+        Realize <| Fst "FStar.UInt32";
+        Realize <| Fst "FStar.UInt64";
+        Realize <| Fst "FStar.Int64";
+        Realize <| Fsti "FStar.Char";
+        Realize <| Fsti "Zen.Set";
+        Extract <| Fst "Zen.OptionT";
+        Extract <| Fst "Zen.ResultT";
+        Extract <| Fst "Zen.List";
+        Extract <| Fst "Zen.ListBounded";
+        Realize <| Fsti "Zen.Array.Base";
+        Realize <| Fsti "FStar.String";
+        Realize <| Fsti "Zen.Dictionary";
+        Extract <| Fst "Zen.Array.Indexed";
+        Extract <| Fst "Zen.Types.Extracted";
+        Extract <| Fst "Zen.Types.Data";
+        Realize <| Fsti "Zen.Types.Realized";
+        Realize <| Fsti "Zen.Util";
+        Realize <| Fsti "Zen.ContractId";
+        Realize <| Fsti "Zen.Asset";
+        Extract <| Fst "Zen.Types.Main";
+        Realize <| Fsti "Zen.Wallet";
+        Realize <| Fsti "Zen.TxSkeleton";
+        Extract <| Fst "Zen.Data";
+        Extract <| Fst "Zen.ContractReturn";
+        Extract <| Fst "Zen.ContractResult";
+        Realize <| Fsti "Zen.Hash.Sha3";
+        Realize <| Fsti "Zen.Crypto";
+        Extract <| Fst "Zen.Hash.Base";
+        Realize <| Fsti "Zen.MerkleTree";
+        Realize <| Fsti "Zen.Bitcoin";
+        Include <| "Zen.Cost";
+        Include <| "Zen.Array";
+        Include <| "Zen.Types";
+        Include <| "Zen.Hash";
+    ]
+
+let get_fstar_module_name: FStarFile -> string =
+    function
+    | Fst src  -> src
+    | Fsti src -> src
+
+let to_fstar_fullname: FStarFile -> string =
+    function
+    | Fst src  -> "fstar/" + src + ".fst"
+    | Fsti src -> "fstar/" + src + ".fsti"
+
+let bop_to_fstar_fullname: BuildOperation -> option<string> =
+    function
+    | Extract src -> Some <| to_fstar_fullname src
+    | Realize src -> Some <| to_fstar_fullname src
+    | Include src -> None
+
+let handleExtraction: BuildOperation -> list<string> =
+    function
+    | Extract src -> ["--extract_module"; get_fstar_module_name src]
+    | Realize src -> []
+    | Include src -> ["--codegen-lib"; src]
+
+let handleBuild: BuildOperation -> list<string> =
+    function
+    | Extract src -> ["fsharp/Extracted/" + get_fstar_module_name src + ".fs"]
+    | Realize src -> ["fsharp/Realized/" + get_fstar_module_name src + ".fs"]
+    | Include src -> []
+
 let extractedDir = "fsharp/Extracted"
 let binDir = "bin"
+
+let concatMap f ls = List.concat (List.map f ls)
 
 let (++) = Array.append
 
@@ -20,7 +106,11 @@ let getFiles pattern =
   |> FileSystemHelper.filesInDirMatching pattern
   |> Array.map (fun file -> file.FullName)
 
-let zulibFiles = getFiles "fstar/*.fst" ++ getFiles "fstar/*.fsti"
+//let zulibFiles = getFiles "fstar/*.fst" ++ getFiles "fstar/*.fsti"
+let zulibFiles =
+    List.choose bop_to_fstar_fullname sources
+    |> List.toArray
+    |> Array.map FileSystemHelper.FullName
 
 let getHints() = getFiles "fstar/*.hints" ++ getFiles "fstar/*.checked"
 
@@ -96,40 +186,18 @@ Target "Verify" (fun _ ->
 Target "Extract" (fun _ ->
   let cores = System.Environment.ProcessorCount
   let threads = cores * 2
-
+  let (++) = List.append
   let args =
-    [|
+    [
        "--lax";
        //"--cache_checked_modules"
        //"--use_hints";
        //"--use_hint_hashes";
-       "--codegen";"FSharp";
-       "--extract_module";"Zen.Integers";
-       "--extract_module";"Zen.Base";
-       "--extract_module";"Zen.Result";
-       "--extract_module";"Zen.ResultT";
-       "--extract_module";"Zen.Option";
-       "--extract_module";"Zen.OptionT";
-       "--extract_module";"Zen.Optics";
-       "--extract_module";"Zen.Array.Indexed";
-       "--extract_module";"Zen.Cost.Extracted";
-       "--codegen-lib";"Zen.Cost";
-       "--extract_module";"Zen.List";
-       "--extract_module";"Zen.ListBounded";
-       "--codegen-lib";"Zen.Array";
-       "--extract_module";"Zen.Types.Extracted";
-       "--extract_module";"Zen.Types.Data";
-       "--extract_module";"Zen.Types.Main";
-       "--codegen-lib";"Zen.Types";
-       "--extract_module";"Zen.Hash.Base";
-       "--codegen-lib";"Zen.Hash"
-       "--extract_module";"Zen.Data";
-       "--extract_module";"Zen.ContractReturn";
-       "--extract_module";"Zen.ContractResult";
-       //"--extract_module"; "Zen.Wallet"
-       "--odir";extractedDir |]
+       "--codegen";"FSharp"
+     ] ++ concatMap handleExtraction sources
+       ++ ["--odir"; extractedDir]
 
-  let exitCode = runFStar args zulibFiles
+  let exitCode = runFStar (List.toArray args) zulibFiles
                  |> Async.RunSynchronously
 
   if exitCode <> 0 then
@@ -139,47 +207,7 @@ Target "Extract" (fun _ ->
 Target "Build" (fun _ ->
 
   let files =
-    [| "fsharp/Realized/prims.fs";
-      "fsharp/Realized/FStar.Pervasives.fs";
-      "fsharp/Extracted/Zen.Base.fs";
-      "fsharp/Extracted/Zen.Option.fs";
-      "fsharp/Extracted/Zen.Result.fs";
-      "fsharp/Realized/Zen.Cost.Realized.fs";
-      "fsharp/Extracted/Zen.Cost.Extracted.fs";
-      "fsharp/Extracted/Zen.Integers.fs";
-      "fsharp/Realized/FStar.UInt8.fs";
-      "fsharp/Realized/FStar.UInt32.fs";
-      "fsharp/Realized/FStar.UInt64.fs";
-      "fsharp/Realized/FStar.Int64.fs";
-      "fsharp/Realized/FStar.Char.fs";
-      "fsharp/Realized/Zen.Set.fs";
-      "fsharp/Extracted/Zen.OptionT.fs";
-      "fsharp/Extracted/Zen.ResultT.fs";
-      "fsharp/Extracted/Zen.List.fs";
-      "fsharp/Extracted/Zen.ListBounded.fs";
-      "fsharp/Realized/Zen.Array.Base.fs";
-      "fsharp/Realized/FStar.String.fs";
-      "fsharp/Realized/Zen.Dictionary.fs";
-      "fsharp/Extracted/Zen.Array.Indexed.fs";
-      "fsharp/Extracted/Zen.Types.Extracted.fs";
-      "fsharp/Extracted/Zen.Types.Data.fs";
-      "fsharp/Realized/Zen.Types.Realized.fs";
-      "fsharp/Realized/Zen.Util.fs";
-      "fsharp/Realized/Zen.ContractId.fs";
-      "fsharp/Realized/Zen.Asset.fs";
-      "fsharp/Extracted/Zen.Types.Main.fs";
-      "fsharp/Realized/Zen.Wallet.fs";
-      //"fsharp/Extracted/Zen.Wallet.fs";
-      "fsharp/Realized/Zen.TxSkeleton.fs";
-      "fsharp/Extracted/Zen.Data.fs";
-      "fsharp/Extracted/Zen.ContractReturn.fs";
-      "fsharp/Extracted/Zen.ContractResult.fs";
-      "fsharp/Realized/Zen.Hash.Sha3.fs";
-      "fsharp/Realized/Zen.Crypto.fs";
-      "fsharp/Extracted/Zen.Hash.Base.fs";
-      "fsharp/Realized/Zen.MerkleTree.fs";
-      "fsharp/Realized/Zen.Bitcoin.fs";
-    |]
+    List.toArray (concatMap handleBuild sources)
 
   let checker = FSharpChecker.Create()
 
