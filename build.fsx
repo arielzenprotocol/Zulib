@@ -11,7 +11,7 @@ open Microsoft.FSharp.Compiler
 module Array = Microsoft.FSharp.Collections.Array
 
 type FStarFile =
-    | Fst of string
+    | Fst  of string
     | Fsti of string
 
 type BuildOperation =
@@ -19,6 +19,7 @@ type BuildOperation =
     | Realize of FStarFile
     | Include of string
 
+(* Only files from this list will be extracted or compiled. *)
 let sources =
     [
         Realize <| Fst "prims";
@@ -82,13 +83,13 @@ let bop_to_fstar_fullname: BuildOperation -> option<string> =
     | Realize src -> Some <| to_fstar_fullname src
     | Include src -> None
 
-let handleExtraction: BuildOperation -> list<string> =
+let withExtractionArgument: BuildOperation -> list<string> =
     function
     | Extract src -> ["--extract_module"; get_fstar_module_name src]
     | Realize src -> []
     | Include src -> ["--codegen-lib"; src]
 
-let handleBuild: BuildOperation -> list<string> =
+let withBuildArgument: BuildOperation -> list<string> =
     function
     | Extract src -> ["fsharp/Extracted/" + get_fstar_module_name src + ".fs"]
     | Realize src -> ["fsharp/Realized/" + get_fstar_module_name src + ".fs"]
@@ -106,7 +107,6 @@ let getFiles pattern =
   |> FileSystemHelper.filesInDirMatching pattern
   |> Array.map (fun file -> file.FullName)
 
-//let zulibFiles = getFiles "fstar/*.fst" ++ getFiles "fstar/*.fsti"
 let zulibFiles =
     List.choose bop_to_fstar_fullname sources
     |> List.toArray
@@ -194,7 +194,7 @@ Target "Extract" (fun _ ->
        //"--use_hints";
        //"--use_hint_hashes";
        "--codegen";"FSharp"
-     ] ++ concatMap handleExtraction sources
+     ] ++ concatMap withExtractionArgument sources
        ++ ["--odir"; extractedDir]
 
   let exitCode = runFStar (List.toArray args) zulibFiles
@@ -207,7 +207,7 @@ Target "Extract" (fun _ ->
 Target "Build" (fun _ ->
 
   let files =
-    List.toArray (concatMap handleBuild sources)
+    List.toArray (concatMap withBuildArgument sources)
 
   let checker = FSharpChecker.Create()
 
